@@ -16,9 +16,10 @@ from gtts import gTTS
 import tempfile
 import queue
 from pinecone import Pinecone
-import google.generativeai as genai
+#import google.generativeai as genai
 
 from dotenv import load_dotenv
+
 
 load_dotenv()  # This loads the variables from .env
 
@@ -44,7 +45,7 @@ db_params = {
     'user': DB_USER,
     'password': DB_PASSWORD,
     'host': DB_HOST,
-    'port': DB_PORT
+    'port': int(DB_PORT) if DB_PORT else None  # Convert to int if provided, else None
 }
 
 # Initialize Flask app
@@ -136,7 +137,8 @@ def create_tables():
                     embedding_id TEXT NOT NULL,
                     language TEXT NOT NULL
                 )
-                """)            conn.commit()
+                """)            
+        conn.commit()
         logger.info("Tables created successfully")
     except Exception as e:
         logger.error(f"Error creating tables: {str(e)}", exc_info=True)
@@ -251,6 +253,7 @@ def process_local_audio(file_path):
         logger.info("Starting transcription with Whisper API")
         with open(file_path, "rb") as audio_file:
             transcript = openai.Audio.transcribe("whisper-1", audio_file)
+
         logger.info("Transcription completed")
 
         # Process and store the transcript
@@ -405,18 +408,21 @@ def retrieve_relevant_video(query_embedding, similarity_threshold):
     
     if results['matches']:
         for match in results['matches']:
-            similarity_score = calculate_cosine_similarity(query_embedding, match['values'])
-            logger.debug(f"Match ID: {match['id']}, Cosine similarity: {similarity_score}")
-            
-            if similarity_score >= similarity_threshold:
-                if 'video_id' in match.get('metadata', {}):
-                    return match['metadata']['video_id']
-                else:
-                    match_id = match.get('id', '')
-                    video_id = match_id.split('_')[0] if '_' in match_id else None
-                    if video_id:
-                        logger.debug(f"Extracted video_id from match ID: {video_id}")
-                        return video_id
+            if 'values' in match and match['values']:
+                similarity_score = calculate_cosine_similarity(query_embedding, match['values'])
+                logger.debug(f"Match ID: {match['id']}, Cosine similarity: {similarity_score}")
+                
+                if similarity_score >= similarity_threshold:
+                    if 'video_id' in match.get('metadata', {}):
+                        return match['metadata']['video_id']
+                    else:
+                        match_id = match.get('id', '')
+                        video_id = match_id.split('_')[0] if '_' in match_id else None
+                        if video_id:
+                            logger.debug(f"Extracted video_id from match ID: {video_id}")
+                            return video_id
+            else:
+                logger.warning(f"Match {match['id']} has no 'values' field or it's empty")
     
     logger.warning("No matches found above the similarity threshold")
     return None
@@ -526,6 +532,9 @@ def generate_embedding(text, use_openai=False):
         raise
 
 def calculate_cosine_similarity(vector1, vector2):
+    if not vector1 or not vector2:
+        logger.warning("One or both vectors are empty in calculate_cosine_similarity")
+        return 0
     return 1 - cosine(vector1, vector2)
 
 # Modify the process_query function
@@ -574,7 +583,8 @@ def process_query():
             
             filtered_results = [
                 match for match in results['matches'] 
-                if calculate_cosine_similarity(query_embedding, match['values']) >= similarity_threshold
+                if 'values' in match and match['values'] and 
+                calculate_cosine_similarity(query_embedding, match['values']) >= similarity_threshold
             ]
             
             logger.debug(f"Filtered results: {filtered_results}")
@@ -625,7 +635,7 @@ def process_query():
             prompt = get_language_specific_prompt(language, query, context)
 
             #to test groq
-            use_api = 'groq'
+            use_api = 'groq' #llama inference endpoint
 
             if use_api == 'openai':
                 answer = generate_response_openai(prompt, query)
