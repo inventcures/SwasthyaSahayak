@@ -1,113 +1,105 @@
 import json
 import groq
 import cohere
-
 from scipy.spatial.distance import cosine
 import numpy as np
-
 import math
 import os
 import sys
 import logging
 from logging.handlers import RotatingFileHandler
 import openai
-import groq
-import cohere
-# This function has been moved just above the process_query function definition
-from pinecone import Pinecone 
 import psycopg2
-import numpy as np
 from flask import Flask, request, jsonify, send_file, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
-import yt_dlp
-from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
 from gtts import gTTS
 import tempfile
-from io import BytesIO
-import io
 import queue
-import threading
+from pinecone import Pinecone
+import google.generativeai as genai
 
-# Configuration
-OPENAI_API_KEY = 'sk-proj-0IZxYOjPpGdzjXQJV2y5T3BlbkFJRJ4ZTL0xFv2IayPs58bo'
+from dotenv import load_dotenv
 
-#GOOGLE_API_KEY = "your-google-api-key-here"
-ANTHROPIC_API_KEY = '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'
-GROQ_API_KEY = 'gsk_q7hXXowq0mnwN0VXZnABWGdyb3FYdA5CuPEZkX65XgMCgMUM1X6egsk_q7hXXowq0mnwN0VXZnABWGdyb3FYdA5CuPEZkX65XgMCgMUM1X6e'
-COHERE_API_KEY = '4UYkUp7TsQzRRV9m8IPMXG5WnJAke7qvd7bYdvai'
+load_dotenv()  # This loads the variables from .env
 
-PINECONE_API_KEY = '09e30548-0e73-4c07-a646-50e05ae66899'
-PINECONE_ENVIRONMENT = 'us-east-1'
-PINECONE_INDEX_NAME = 'vid-rag'
+# Then replace all hardcoded secrets with os.getenv calls:
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+COHERE_API_KEY = os.getenv('COHERE_API_KEY')
+PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+PINECONE_ENVIRONMENT = os.getenv('PINECONE_ENVIRONMENT')
+PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
 
-DB_NAME = 'medvidqa-india-db'
-DB_USER = 'tp53'
-DB_PASSWORD = 'tracheostomy'
-DB_HOST = '34.131.130.102'
-DB_PORT = '5432'
+# Database configuration
+DB_NAME = os.getenv('DB_NAME')
+DB_USER = os.getenv('DB_USER')
+DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_HOST = os.getenv('DB_HOST')
+DB_PORT = os.getenv('DB_PORT')
 
+# Update your db_params dictionary
+db_params = {
+    'dbname': DB_NAME,
+    'user': DB_USER,
+    'password': DB_PASSWORD,
+    'host': DB_HOST,
+    'port': DB_PORT
+}
 
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Configure logging
-log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-log_file = 'health_app.log'
-log_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3)
-log_handler.setFormatter(log_formatter)
-logger = logging.getLogger('HealthAppLogger')
-logger.setLevel(logging.DEBUG)
-logger.addHandler(log_handler)
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(log_formatter)
-logger.addHandler(console_handler)
+def setup_logging():
+    log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    log_file = 'health_app.log'
+    log_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3)
+    log_handler.setFormatter(log_formatter)
+    logger = logging.getLogger('HealthAppLogger')
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(log_handler)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(log_formatter)
+    logger.addHandler(console_handler)
+    return logger
+
+logger = setup_logging()
 
 # Initialize API clients
-try:
-    logger.info("Initializing API clients")
-    
-    # OpenAI
+def initialize_api_clients():
     try:
+        logger.info("Initializing API clients")
+        
+        # OpenAI
         openai.api_key = OPENAI_API_KEY
         logger.debug("OpenAI API key set")
-    except Exception as e:
-        logger.error(f"Error setting OpenAI API key: {str(e)}", exc_info=True)
 
-    # Anthropic
-    try:
-        anthropic_client = Anthropic(api_key=ANTHROPIC_API_KEY)
-        logger.debug("Anthropic client initialized")
-    except Exception as e:
-        logger.error(f"Error initializing Anthropic client: {str(e)}", exc_info=True)
-
-    # Groq
-    try:
+        # Groq
         groq_client = groq.Groq(api_key=GROQ_API_KEY)
         logger.debug("Groq client initialized")
-    except Exception as e:
-        logger.error(f"Error initializing Groq client: {str(e)}", exc_info=True)
 
-    # Cohere
-    try:
+        # Cohere
         co = cohere.Client(COHERE_API_KEY)
         logger.debug("Cohere client initialized")
-    except Exception as e:
-        logger.error(f"Error initializing Cohere client: {str(e)}", exc_info=True)
 
-    # Pinecone
-    try:
+        # Pinecone
         pc = Pinecone(api_key=PINECONE_API_KEY)
         pinecone_index = pc.Index(PINECONE_INDEX_NAME)
         pinecone_index.describe_index_stats()
         logger.info("Pinecone connection successful")
-    except Exception as e:
-        logger.error(f"Error initializing Pinecone client: {str(e)}", exc_info=True)
 
-    logger.info("All API clients initialized successfully")
-except Exception as e:
-    logger.error(f"Error initializing API clients: {str(e)}", exc_info=True)
-    sys.exit(1)
+        index_stats = pinecone_index.describe_index_stats()
+        logger.debug(f"Index dimension: {index_stats['dimension']}")
+
+        logger.info("All API clients initialized successfully")
+        return openai, groq_client, co, pinecone_index
+    except Exception as e:
+        logger.error(f"Error initializing API clients: {str(e)}", exc_info=True)
+        sys.exit(1)
+
+openai, groq_client, co, pinecone_index = initialize_api_clients()
 
 # Database connection parameters
 db_params = {
@@ -144,8 +136,7 @@ def create_tables():
                     embedding_id TEXT NOT NULL,
                     language TEXT NOT NULL
                 )
-                """)
-            conn.commit()
+                """)            conn.commit()
         logger.info("Tables created successfully")
     except Exception as e:
         logger.error(f"Error creating tables: {str(e)}", exc_info=True)
@@ -209,7 +200,6 @@ def get_processed_video_ids():
     except Exception as e:
         logger.error(f"Error getting processed video IDs: {str(e)}", exc_info=True)
     return processed_video_ids
-
 
 def process_audio_folder(folder_path):
     logger.info(f"Processing audio files in folder: {folder_path}")
@@ -285,7 +275,7 @@ def chunk_transcript(transcript, chunk_duration=60):
     current_chunk = []
     current_duration = 0
     
-    for i, word in enumerate(words):
+    for word in words:
         current_chunk.append(word)
         current_duration += len(word) / 5  # Rough estimate: 5 characters per second
         
@@ -404,7 +394,6 @@ def text_to_speech():
         return jsonify({'error': str(e)}), 500
 
 # Add new function for video retrieval
-# Modify the retrieve_relevant_video function
 def retrieve_relevant_video(query_embedding, similarity_threshold):
     logger.debug("Retrieving relevant video from Pinecone")
     results = pinecone_index.query(
@@ -416,7 +405,7 @@ def retrieve_relevant_video(query_embedding, similarity_threshold):
     
     if results['matches']:
         for match in results['matches']:
-            similarity_score = cosine_similarity(query_embedding, match['values'])
+            similarity_score = calculate_cosine_similarity(query_embedding, match['values'])
             logger.debug(f"Match ID: {match['id']}, Cosine similarity: {similarity_score}")
             
             if similarity_score >= similarity_threshold:
@@ -428,8 +417,7 @@ def retrieve_relevant_video(query_embedding, similarity_threshold):
                     if video_id:
                         logger.debug(f"Extracted video_id from match ID: {video_id}")
                         return video_id
-        
-       
+    
     logger.warning("No matches found above the similarity threshold")
     return None
 
@@ -473,7 +461,6 @@ def generate_frame_urls(video_id, start_time, end_time):
         'last_frames': last_frames
     }
 
-
 def generate_response_groq(prompt, query, model="llama2-70b-4096"):
     try:
         messages = [
@@ -508,38 +495,13 @@ def generate_response_openai(prompt, query):
 
 def generate_response_gemini(prompt, query):
     try:
-        model = GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-pro')
         response = model.generate_content(f"{prompt}\n\nQuery: {query}")
         return response.text
     except Exception as e:
         logger.error(f"Error calling Gemini API: {str(e)}", exc_info=True)
         return "I apologize, but I encountered an error while processing your request."
 
-
-""" def generate_embedding(text, use_openai=False):
-    try:
-        if use_openai:
-            logger.debug("Generating embedding using OpenAI API")
-            response = openai.Embedding.create(
-                input=text,
-                model="text-embedding-ada-002"
-            )
-            return response['data'][0]['embedding']
-        else:
-            logger.debug("Generating embedding using Cohere API")
-            response = co.embed(
-                texts=[text],
-                model='embed-english-v3.0',
-                input_type='search_query'
-            )
-            # Cohere's 'embed-english-v3.0' model generates embeddings of exactly 1536 dimensions
-            return response.embeddings[0]
-    except Exception as e:
-        logger.error(f"Error generating embedding: {str(e)}", exc_info=True)
-        raise """
-
-
- # Fallback implementation:
 def generate_embedding(text, use_openai=False):
     try:
         if use_openai:
@@ -553,7 +515,7 @@ def generate_embedding(text, use_openai=False):
             logger.debug("Generating embedding using Cohere API")
             response = co.embed(
                 texts=[text],
-                model='embed-english-v3.0',
+                model='embed-english-v2.0',
                 input_type='search_query'
             )
             # Ensure the embedding is 1536 dimensions
@@ -563,9 +525,8 @@ def generate_embedding(text, use_openai=False):
         logger.error(f"Error generating embedding: {str(e)}", exc_info=True)
         raise
 
-
-def calculate_cosine_similarity(query_embedding, chunk_embedding):
-    return 1 - cosine(query_embedding, chunk_embedding)
+def calculate_cosine_similarity(vector1, vector2):
+    return 1 - cosine(vector1, vector2)
 
 # Modify the process_query function
 @app.route('/process_query', methods=['POST'])
@@ -613,7 +574,7 @@ def process_query():
             
             filtered_results = [
                 match for match in results['matches'] 
-                if cosine_similarity(query_embedding, match['values']) >= similarity_threshold
+                if calculate_cosine_similarity(query_embedding, match['values']) >= similarity_threshold
             ]
             
             logger.debug(f"Filtered results: {filtered_results}")

@@ -1,3 +1,9 @@
+# Exclude all .env files
+*.env
+
+# Optionally, you can explicitly include .env.example if you have one
+!.env.example
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
