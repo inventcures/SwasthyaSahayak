@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swasthya_youtube_GPT</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Swasthya_youtube_GPT : Find semantic answers to your health queries</h1>
+        
+        <div class="chat-container">
+            <div class="user-input">
+                <h2>Your Query</h2>
+                <select id="languageSelect" class="language-select">
+                    <option value="en-US">English</option>
+                    <option value="hi-IN">Hindi</option>
+                    <option value="bn-IN">Bengali</option>
+                </select>
+                <select id="similarityThresholdSelect" class="similarity-threshold-select">
+                    <option value="0.6">0.6</option>
+                    <option value="0.7">0.7</option>
+                    <option value="0.8" selected>0.8</option>
+                    <option value="0.9">0.9</option>
+                    <option value="0.95">0.95</option>
+                </select>
+                <div class="button-group">
+                    <button id="startRecordingBtn" class="large-button primary-button">Start Recording</button>
+                    <button id="stopRecordingBtn" class="large-button secondary-button" disabled>Stop Recording</button>
+                </div>
+                <div class="transcription-container">
+                    <textarea id="transcriptionArea" class="transcription-area" readonly></textarea>
+                    <button id="clearTranscriptionBtn" class="clear-button">Clear</button>
+                </div>
+                <button id="submitQueryBtn" class="large-button submit-button">
+                    <span>Find the answer to my query</span>
+                    <div class="loader"></div>
+                </button>
+            </div>
+            
+            <div class="bot-response">
+                <h2>Bot Response</h2>
+                <div class="response-container">
+                    <div id="responseDiv" class="response-text"></div>
+                    <button id="speakResponseBtn" class="speak-button" disabled>🔊</button>
+                </div>
+                <div id="videoInfoContainer" class="video-info-container">
+                    <h3>Relevant Video Segment</h3>
+                    <div id="videoSpan" class="video-span"></div>
+                    <div id="frameContainer" class="frame-container">
+                        <div id="firstFrames" class="frames"></div>
+                        <div id="lastFrames" class="frames"></div>
+                    </div>
+                    <div id="youtubePlayerContainer" class="youtube-player-container">
+                        <div id="youtubePlayer"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="script.js"></script>
+</body>
+</html>
