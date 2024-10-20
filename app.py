@@ -692,7 +692,7 @@ def generate_frame_urls(video_id, start_time, end_time):
         'last_frames': last_frames
     }
 
-def generate_response_llama(prompt, query, model="llama2-70b-4096"):
+def generate_response_llama(prompt, query, model="llama-70b-chat"):
     """
     Generate a response using the Llama 3.1 API.
     
@@ -789,9 +789,97 @@ def calculate_cosine_similarity(vector1, vector2):
         return 0
     return 1 - cosine(vector1, vector2)
 
-# Modify the process_query function
 @app.route('/process_query', methods=['POST'])
 def process_query():
+    logger.info("Received query processing request")
+    try:
+        data = request.json
+        query = data['query']
+        language = data.get('language', 'en-US')
+        similarity_threshold = float(data.get('similarityThreshold', 0.8))  # Ensure it's parsed as float
+        use_pinecone = data.get('use_pinecone', False)  # New parameter to optionally use Pinecone
+
+        logger.debug(f"Query: {query}")
+        logger.debug(f"Language: {language}")
+        logger.debug(f"Similarity Threshold: {similarity_threshold}")
+        logger.debug(f"Using Pinecone: {use_pinecone}")
+
+        logger.debug("Generating embedding for query")
+        query_embedding = generate_embedding(query)
+        logger.debug(f"Query embedding generated, length: {len(query_embedding)}")
+
+        logger.debug("Retrieving relevant video")
+        
+        if use_pinecone:
+            # Use Pinecone for vector search
+            results = pinecone_index.query(
+                vector=query_embedding,
+                top_k=10,
+                include_metadata=True
+            )
+            
+            filtered_results = [
+                match for match in results['matches']
+                if 'values' in match and match['values'] and
+                calculate_cosine_similarity(query_embedding, match['values']) >= similarity_threshold
+            ]
+        else:
+            # Use Qdrant for vector search
+            search_result = qdrant_client.search(
+                collection_name="video_chunks",
+                query_vector=query_embedding,
+                limit=10
+            )
+            
+            filtered_results = [
+                match for match in search_result
+                if calculate_cosine_similarity(query_embedding, match.vector) >= similarity_threshold
+            ]
+        
+        if filtered_results:
+            if use_pinecone:
+                video_id = filtered_results[0]['metadata']['video_id']
+                chunk_details = [
+                    {
+                        'text': match['metadata']['text'],
+                        'start_time': match['metadata']['start_time'],
+                        'end_time': match['metadata']['end_time']
+                    }
+                    for match in filtered_results
+                ]
+            else:
+                video_id = filtered_results[0].payload['video_id']
+                chunk_details = [
+                    {
+                        'text': match.payload['text'],
+                        'start_time': match.payload.get('start_time'),
+                        'end_time': match.payload.get('end_time')
+                    }
+                    for match in filtered_results
+                ]
+        else:
+            video_id = None
+            chunk_details = []
+
+        if not video_id:
+            logger.info("No suitable video found for the query")
+            answer = get_language_specific_no_match_response(language)
+            disclaimer = get_language_specific_disclaimer(language)
+            return jsonify({
+                'response': answer + disclaimer,
+                'video_id': None,
+                'temporal_segments': [],
+                'relevant_start': None,
+                'relevant_end': None,
+                'frame_urls': None
+            })
+        else:
+            logger.debug(f"Retrieved video ID: {video_id}")
+
+
+# Modify the process_query function
+#@app.route('/process_query', methods=['POST'])
+def process_query_old():
     logger.info("Received query processing request")
     try:
         data = request.json
@@ -942,7 +1030,6 @@ def process_query():
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
-
 # Add this new debug endpoint
 @app.route('/debug/index_stats', methods=['GET'])
 def index_stats():
