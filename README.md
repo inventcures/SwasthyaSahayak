@@ -2,6 +2,12 @@
 
 SwasthyaSahayak is an innovative AI-powered health information system designed to provide accurate and accessible health information in India using WhatsApp. This repository contains the backend for the video RAG (Retrieval Augmented Generation) component of the system.
 
+Demo video: 
+https://drive.google.com/file/d/1EQi9L6lFnLP2tG5TuekuuAWBTGZ2gO7M/view?usp=drive_link
+
+NotebookLM overview: 
+https://notebooklm.google.com/notebook/4ff74b68-d1c9-4e8d-b8aa-974a799eb07b/audio
+
 ## Table of Contents
 
 - [Overview](#overview)

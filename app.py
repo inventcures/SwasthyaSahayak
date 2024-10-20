@@ -879,6 +879,7 @@ def process_query():
 
 # Modify the process_query function
 #@app.route('/process_query', methods=['POST'])
+'''
 def process_query_old():
     logger.info("Received query processing request")
     try:
@@ -1030,6 +1031,9 @@ def process_query_old():
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+'''
+
+
 # Add this new debug endpoint
 @app.route('/debug/index_stats', methods=['GET'])
 def index_stats():
